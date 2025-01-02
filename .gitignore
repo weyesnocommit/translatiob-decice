@@ -2,3 +2,4 @@
 setup_cache.json
 *.bat
 config.py
+__pycache__
