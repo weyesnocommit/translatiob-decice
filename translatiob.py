@@ -158,23 +158,6 @@ class MyBot(commands.Bot):
                 _, sent = await self.send_webhook(message, resp, author, setup, avatar)
             self._blocked = False
             
-            return
-            if True:
-                recursion_n = 0
-                current = sent
-                path = []
-                for i in range(5):
-                    if current in self.translation_pairs:
-                        path.append(current)
-                        current = self.translation_pairs[current]
-                        recursion_n += 1
-                    else:
-                        _, current = await self.send_webhook(message, response, author, setup, avatar)
-                        if current in self.translation_pairs:
-                            path.append(current)
-                            current = self.translation_pairs[current]
-                            recursion_n += 1
-                print(path)
     async def send_webhook(self, message, response, author, setup, avatar):
         webhook_id = setup.get("webhook_id")
         webhook_token = setup.get("webhook_token")
