@@ -207,8 +207,6 @@ class Translatiob(commands.Bot):
         self._blocked = True
         self.logger.info(message.content)
         if setup:
-            print("sir ok")
-            print(self.get_config(message.content, model = setup['model']))
             response = self.LLM.safe_send(self.get_config(message.content, model = setup['model']))
             responses = [response]
             current_woble = response
