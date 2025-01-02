@@ -7,25 +7,24 @@ import asyncio
 import json
 import random
 import logging
+from config import *
 
 logging.basicConfig(
-    level=logging.ERROR,
+    level=logging.WARN,
     format='[%(asctime)s][%(levelname)s][%(name)s]: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 logger = logging.getLogger(__name__)
 
-TIMEOUT = 30000
 class MyBot(commands.Bot):
-    def __init__(self, webhook_url, top_layer_port,):
+    def __init__(self,top_layer_port):
         intents = discord.Intents.default()
         intents.typing = True
         intents.messages = True
         intents.message_content = True
         intents.members = True
         super().__init__(command_prefix='!', intents=intents)  # Use '!' as command prefix
-        self.temp = 2.8  # Default temperature
-        self.webhook_url = webhook_url
+        self.temp = 2.2  # Default temperature
         self.top_layer_port = top_layer_port
         
         # Initialize ZeroMQ context and socket
@@ -36,65 +35,186 @@ class MyBot(commands.Bot):
         self.nick_cache = {}
         self._blocked = False
         self.top_layer = False
-
+        self.setups = self.load_setups()  # Load existing setups from JSON
+        
     async def on_ready(self):
-        print(f'Logged in as {self.user}')
+        logger.info(f'Logged in as {self.user}')
         self.heartbeat_task.start()
         self.clear_names.start()
+        await self.tree.sync()
 
+    def can_delete(self, message, key):
+        if key in self.setups and self.setups[key].get("delete_messages", False) and not self.setups[key].get("disabled", False):
+            if not message.webhook_id:
+                logger.info("MNONE WEGBHOKKER")
+                return 1
+            else:              
+                for k,v in self.setups.items():
+                    if v['webhook_id'] == message.webhook_id:
+                        return -1
+                return 1
+                if False: # cool for regurgiatates
+                    for setup_value in self.setups.values():
+                        logger.info(f"AM CHECKOCK {message.webhook_id} amd {setup_value['webhook_id']} ")
+                        if message.webhook_id != setup_value['webhook_id']:
+                            return 1  # Delete the message if configured to do so
+                        else:
+                            logger.info("YBUBBB")
+                            return -1
+        return 0
+    
+    def get_author(self, message):
+        author = message.author.name
+        logger.info("OKEE", author)
+        try:
+            author_ = message.author.nick
+            if author_ is not None:
+                author = author_
+            else:
+                author = message.author.display_name
+            logger.info("jOKEE", author, message.author.display_name)
+        except:
+            logger.info("XDDD NOTT NICK")
+        return author
+        
+    def get_avatar(self, message):
+        avatar = None
+        try:
+            avatar = message.author.avatar.url
+        except:
+            avatar = random.choice(["https://i.imgur.com/NGvttCc.gif", "https://i.imgur.com/SMJq55x.gif", "https://i.imgur.com/3pgztqw.gif", "https://i.imgur.com/WLoxslE.gif"])
+        return avatar
+    
+    def translate_author(self, author, model):
+        logger.info(author, self.nick_cache)
+        try:
+            if author not in self.nick_cache:
+                author_ = self.zmqSend(author, model)
+                if author_:
+                    self.nick_cache[author] = author_
+                    author = author_
+            else:
+                author = self.nick_cache[author]
+        except Exception as e:
+            logger.error(f"HUBINTA {e}")
+        return author
+    
     async def on_message(self, message):
-        asyncio.create_task(self._on_message(message))
-
-    async def _on_message(self, message):
-        if not self.top_layer:
-            return
-        self._blocked = True
-        if message.author == self.user or message.content is None or message.channel.id in []:
+        await self.process_commands(message)
+        if message.author == self.user or message.content is None:
             return  # Ignore messages from the bot itself or if the message is None
         
-        # Process commands before handling other messages
-        await self.process_commands(message)
-
-        # Send the message text via ZMQ
-        logger.info(message.content)
-        if not message.content:
+        #content = message.content
+        author = self.get_author(message)
+        avatar = self.get_avatar(message)
+        
+        is_from_self = False
+        relevant_keys = []
+        for i in self.setups.values():
+            if i['from_channel'] == message.channel.id and not i['disabled']:
+                relevant_keys.append(i)
+            elif i['from_server'] == message.guild.id and not i['disabled']:
+                relevant_keys.append(i)
+            elif i['from_author'] == message.author.id and not i['disabled']:
+                relevant_keys.append(i)
+            if i['webhook_id'] == message.webhook_id and not i['disabled']:
+                is_from_self = True
+        if is_from_self:
             return
-        response = self.zmqSend(message.content)
-        author = message.author.name
-        logger.info(self.nick_cache)
-        try:
-            if message.author.nick not in self.nick_cache:
-                author = self.zmqSend(message.author.nick)
-                if not author:
-                    author = message.author.nick
-                self.nick_cache[message.author.nick] = author
-            else:
-                author = self.nick_cache[message.author.nick]
-        except:
-            if message.author.name not in self.nick_cache:
-                author = self.zmqSend(message.author.name)
-                if not author:
-                    author = message.author.name
-                self.nick_cache[message.author.name] = author
-            else:
-                author = self.nick_cache[message.author.name]
-        # Forward the response via webhook
-        await self.send_webhook(response, author, message)
-        self._blocked = False
+                        
+        print(relevant_keys)
+        
+        for key in relevant_keys:
+            if key['delete_messages']:
+                try:
+                    await message.delete()
+                except:
+                    print("NOT DELTE CONE")
+            asyncio.create_task(self._on_message(message, author, avatar, key))
 
-    def zmqSend(self, text: str):
+
+    async def _on_message(self, message, author, avatar, setup):
+        if not self.top_layer or message.content is None:
+            return
+        self._blocked = True
+        logger.info(message.content)
+        if setup:
+            model = setup['model']
+            response = self.zmqSend(message.content, model)
+            responses = [response]
+            current_woble = response
+            logger.warning(f"{author}: {message.content} -> {response}")
+            if True:
+                for i in range(setup['recursion_depth']):
+                    old_wobble = current_woble
+                    current_woble = self.zmqSend(old_wobble, model)
+                    logger.warning(f"{author}: {old_wobble} -> {current_woble}")
+                    if current_woble:
+                        responses.append(current_woble)
+            print(responses)
+            author = self.translate_author(author, model)
+            # Forward the response via webhook
+            for resp in responses:
+                _, sent = await self.send_webhook(message, resp, author, setup, avatar)
+            self._blocked = False
+            
+            return
+            if True:
+                recursion_n = 0
+                current = sent
+                path = []
+                for i in range(5):
+                    if current in self.translation_pairs:
+                        path.append(current)
+                        current = self.translation_pairs[current]
+                        recursion_n += 1
+                    else:
+                        _, current = await self.send_webhook(message, response, author, setup, avatar)
+                        if current in self.translation_pairs:
+                            path.append(current)
+                            current = self.translation_pairs[current]
+                            recursion_n += 1
+                print(path)
+    async def send_webhook(self, message, response, author, setup, avatar):
+        webhook_id = setup.get("webhook_id")
+        webhook_token = setup.get("webhook_token")
+        if not author.strip():
+            author = "spomqinson"
+        if webhook_id and webhook_token:
+            webhook_url = f"https://discord.com/api/webhooks/{webhook_id}/{webhook_token}"
+            excesska = author[80:]
+            resp = f"{response}\n"
+            if not setup['delete_messages']:
+                kanal = message.channel.id
+                idka = message.id
+                resp = f"[{response}](https://discord.com/channels/{kanal}/{kanal}/{idka})"
+            if excesska:
+                resp = f"{excesska}: {resp}"
+            webhook_data = {
+                "content": resp,  # Assuming the response has a "text" field
+                "username": author[:80],
+                "avatar_url": avatar  # Copy the author's profile picture
+            }
+            
+            # Send the webhook and get the response
+            webhook_response = requests.post(webhook_url, json=webhook_data)
+            # Return the message ID of the sent message
+            self.translation_pairs[resp] = message.content
+            return webhook_response, resp
+
+    def zmqSend(self, text: str, model: str):
         message = {
             "type": "gen",
             "text": text,
-            "model": "T5-mihm-gc",
+            "model": model,
             "config": {
                 "temperature": self.temp,
-                'max_new_tokens': 500,
-                'num_beams': 2,
+                'max_new_tokens': 200,
+                'num_beams': 3,
                 'no_repeat_ngram_size': 2,
                 'repetition_penalty': 1.01,
             },
-            "from" : "translatiob"
+            "from": "translatiob"
         }
         logger.info(f"SENDING {message}")
         try:
@@ -103,20 +223,14 @@ class MyBot(commands.Bot):
             return response
         except Exception as e:
             logger.error(e)
-            logger.error("======ZMQSEND TIMEOUTKA OR SOMTHINGS======")
+            logger.error("======ZMQSEND TIMEOUT OR SOMETHING======")
             self.top_layer_socket.close()
             self.top_layer_socket = self.top_layer_context.socket(zmq.REQ)
             self.top_layer_socket.setsockopt(zmq.RCVTIMEO, TIMEOUT)
             self.top_layer_socket.connect(f"tcp://127.0.0.1:{self.top_layer_port}")
 
-    async def send_webhook(self, response, author, message):
-        webhook_data = {
-            "content": response,  # Assuming the response has a "text" field
-            "username": author[:80],
-            "avatar_url": str(message.author.avatar.url)  # Copy the author's profile picture
-        }
+
         
-        requests.post(self.webhook_url, json=webhook_data)
 
     def pack_and_send(self, data):
         packed_data = msgpack.packb(data)
@@ -138,7 +252,7 @@ class MyBot(commands.Bot):
     async def heartbeat_task(self):
         try:
             message = {
-                "text": "translatiob",
+                "from": "translatiob",
                 "type": "ping"
             }
             self.top_layer_socket.setsockopt(zmq.RCVTIMEO, 100)
@@ -148,26 +262,343 @@ class MyBot(commands.Bot):
             logger.info(response)
         except zmq.Again:
             self.top_layer = False
-            logger.error("ANTI EHART BEATTTTTTTTT''s")
+            logger.error("ANTI HEART BEATTTTTTTTT''s")
             self.top_layer_socket.close()
             self.top_layer_socket = self.top_layer_context.socket(zmq.REQ)
             self.top_layer_socket.setsockopt(zmq.RCVTIMEO, TIMEOUT)
             self.top_layer_socket.connect(f"tcp://127.0.0.1:{self.top_layer_port}")
 
-# Replace with your bot token, webhook URL, and top layer port
-bot_token = ""
-webhook_url = ''
-TOP_LAYER_PORT = 5556  # Replace with your actual port
+    def load_setups(self):
+        try:
+            with open(SETUP_FILE, 'r') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {}
 
-bot = MyBot(webhook_url=webhook_url, top_layer_port=TOP_LAYER_PORT)
+    def save_setups(self):
+        with open(SETUP_FILE, 'w') as f:
+            json.dump(self.setups, f)
+
+    async def create_webhook(self, channel):
+        # Create a new webhook in the destination channel
+        webhook = await channel.create_webhook(name=f"{self.user.name} Webhook")
+        return webhook
+
+bot = MyBot(top_layer_port=5556)
+
+
+# Create a session for the webhook adapter
+
+async def delete_webhook(webhook_id, webhook_token):
+    return
+
+async def try_fetch_channel(ctx, channel_str):
+    if channel_str:
+        # Remove "<#" and ">" if present, to extract the channel ID
+        if channel_str.startswith('<#') and channel_str.endswith('>'):
+            channel_str = channel_str[2:-1]
+
+        try:
+            # Convert the channel string to an integer (channel ID)
+            channel_id = int(channel_str)
+            # Fetch the channel by its ID (even if it's from another server)
+            fetched_channel = await bot.fetch_channel(channel_id)
+            return fetched_channel
+        except (discord.NotFound, ValueError):
+            await ctx.send(f"Hi you??? Am not acces {channel_str} not it o it.")
+            return None
+        except discord.Forbidden:
+            await ctx.send(f"AM NOT permison  sos so n M {channel_str}.")
+            return None
+    return None
+
+def toggle_existing(key, state):
+    if key in bot.setups:
+        bot.setups[key]['disabled'] = state
+        bot.save_setups()
+        return True, bot.setups[key]['disabled']
+    return False, None
+
+async def manage_webhooker(channel):
+    webhook = None
+    existing_webhook = None
+    webhooks = await channel.webhooks()
+    
+    for webhook in webhooks:
+        if webhook.name == 'GUANGDONG CAWOLO HARRAQ TECHNOLOGY CO., LTD':  # You can also match by other attributes if needed
+            existing_webhook = webhook
+            break
+    
+    if existing_webhook is None:
+        webhook = await channel.create_webhook(name='GUANGDONG CAWOLO HARRAQ TECHNOLOGY CO., LTD')
+    else:
+        webhook = existing_webhook
+    return webhook
+
+def format_discord_mentions(data):
+    activeka = []
+    disabledka = []
+    for k, v in data.items():
+        if v.get('from_author'):
+            source = f"<@{v['from_author']}>"
+        elif v.get('from_server'):
+            source = f"<@{v['from_server']}>"
+        elif v.get('from_channel'):
+            source = f"<#{v['from_channel']}>"
+        else:
+            source = "Unknown"
+
+        if v.get('to_channel'):
+            dest = f"<#{v['to_channel']}>"
+        else:
+            dest = "Unknown"
+        
+        if not v['disabled']:
+            activeka.append(f"{k}(model={v['model']}, depth={v['recursion_depth']}): {source} -> {dest}")
+        else:
+            disabledka.append(f"{k}(model={v['model']}, depth={v['recursion_depth']}): {source} -> {dest}")
+        
+    return activeka, disabledka
+
+@bot.command(name='showkasetupka')
+async def showkasetupka(ctx):
+    if ctx.author.id not in AUTHORIZED_USER_IDS and not any(role.id in AUTHORIZED_ROLE_IDS for role in ctx.author.roles):
+        await ctx.send("YOU WRONGS IT YOU ANTI PERMISSIONS")
+        return
+    activeka, disabledka = format_discord_mentions(bot.setups)
+    msg = "## Ogam ake u observers followings mapping:\n\n"
+    for item in activeka:
+        msg += item + "\n"
+    msg += "\n## Disabledka his:\n\n"
+    for item in disabledka:
+        msg += item + "\n"
+    await ctx.send(msg)
 
 @bot.command(name='temp')
-async def set_temperature(ctx, temp):
-    bot.temp = max(0.1,min(float(temp),3))
+async def temp(ctx, temp):
+    if ctx.author.id not in AUTHORIZED_USER_IDS and not any(role.id in AUTHORIZED_ROLE_IDS for role in ctx.author.roles):
+        await ctx.send("YOU WRONGS IT YOU ANTI PERMISSIONS")
+        return
+    bot.temp = max(0.1, min(float(temp), 3))
     await ctx.send(f'NEW HIS TEMP NEW!!!!! {bot.temp}')
 
-bot.run(bot_token)
+@bot.command(name='hiyou')
+async def hiyou(ctx, user: discord.Member, model: str = 't5-mihm'):
+    if ctx.author.id not in AUTHORIZED_USER_IDS and not any(role.id in AUTHORIZED_ROLE_IDS for role in ctx.author.roles):
+        return
+    
+    key = str(user.id+ctx.channel.id)
+    exist, state = toggle_existing(key, False)
+    if exist:
+        await ctx.send(f'IYTESBUSINESS {ctx.channel.mention}! {state}')
+        return
+    webhook = await manage_webhooker(ctx.channel)
+    bot.setups[key] = {
+        "created_in": ctx.channel.id,
+        "from_author": user.id,
+        "from_server": None,
+        "from_channel": None,
+        "to_channel": ctx.channel.id,
+        "delete_messages": True,
+        "webhook_id": webhook.id,
+        "webhook_token": webhook.token,
+        "model": model,
+        "disabled": False,
+        "recursion_depth": 0
+    }
+    bot.save_setups()
+
+    await ctx.send(f'Ready for business? <@{user.id}>')
 
 
 
+@bot.command(name='byeyou')
+async def byeyou(ctx, user: discord.Member):
+    if ctx.author.id not in AUTHORIZED_USER_IDS and not any(role.id in AUTHORIZED_ROLE_IDS for role in ctx.author.roles):
+        return
+    
+    key = str(user.id+ctx.channel.id)
+    exist, state = toggle_existing(key, True)
+    if exist:
+        await ctx.send(f'IYTESBUSINESS {ctx.channel.mention}! {state}')
+    await ctx.send(f'ANTI BUSINESSSSSSSSSSSSSSSSSSSsssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss <@{user.id}> Business close status ') 
 
+
+@bot.command(name='translatekaONKA')
+async def translatekaONKA(ctx, to_channel: str = None, from_channel: str = None, model: str = 't5-mihm'):
+    if ctx.author.id not in AUTHORIZED_USER_IDS and not any(role.id in AUTHORIZED_ROLE_IDS for role in ctx.author.roles):
+        await ctx.send("YOU WRONGS YOUR WORONGS. YOU NOT")
+        return
+
+    # Try to fetch both from_channel and to_channel
+    from_channel = await try_fetch_channel(ctx, from_channel)
+    to_channel = await try_fetch_channel(ctx, to_channel)
+
+    # Proceed with the setup process
+    if from_channel is None and to_channel is None:
+        key = str(ctx.channel.id+ctx.channel.id)
+        exist, state = toggle_existing(key, False)
+        if exist:
+            await ctx.send(f'IYTESBUSINESS {ctx.channel.mention}! {state}')
+            return
+        webhook = await manage_webhooker(ctx.channel)
+        bot.setups[key] = {
+            "created_in": ctx.channel.id,
+            "from_author": None,
+            "from_server": None,
+            "from_channel": ctx.channel.id,
+            "to_channel": ctx.channel.id,
+            "delete_messages": True,
+            "webhook_id": webhook.id,
+            "webhook_token": webhook.token,
+            "model": model,
+            "disabled": False,
+            "recursion_depth": 0
+        }
+        bot.save_setups()
+        await ctx.send(f'IYTESBUSINESS {ctx.channel.mention}!')
+    elif from_channel and to_channel:
+        key = str(from_channel.id+to_channel.id)
+        exist, state = toggle_existing(key, False)
+        if exist:
+            await ctx.send(f'IYTESBUSINESS {ctx.channel.mention}! {state}')
+            return
+        webhook = await manage_webhooker(to_channel)
+        bot.setups[key] = {
+            "created_in": ctx.channel.id,
+            "from_author": None,
+            "from_server": None,
+            "from_channel": from_channel.id,
+            "to_channel": to_channel.id,
+            "delete_messages": False,
+            "webhook_id": webhook.id,
+            "webhook_token": webhook.token,
+            "model": model,
+            "disabled": False,
+            "recursion_depth": 0
+        }
+        bot.save_setups()  # Save setups after modification
+        await ctx.send(f'OIYESBUSINESS {from_channel.mention} -> {to_channel.mention} Webhooker.')
+    elif to_channel:
+        key = str(ctx.guild.id+to_channel.id)
+        exist, state = toggle_existing(key, False)
+        if exist:
+            await ctx.send(f'IYTESBUSINESS {ctx.channel.mention}!')
+            return
+        webhook = await manage_webhooker(to_channel)
+        bot.setups[key] = {
+            "created_in": ctx.channel.id,
+            "from_author": None,
+            "from_server": ctx.guild.id,
+            "from_channel": None,
+            "to_channel": to_channel.id,
+            "delete_messages": False,
+            "webhook_id": webhook.id,
+            "webhook_token": webhook.token,
+            "model": model,
+            "disabled": False,
+            "recursion_depth": 0
+        }
+        bot.save_setups()  # Save setups after modification
+        await ctx.send(f'oyes uinesss Server -> {to_channel.mention} WEbholker .')
+
+@bot.tree.command(name="translatekaonka")
+async def translatekaONKA_slash(interaction: discord.Interaction, to_channel: str = None, from_channel: str = None, model: str = 't5-mihm'):
+    # Convert the interaction into a mock context object (if needed) to call the original function
+    # Simulate a context using interaction for the original function call
+    ctx = await bot.get_context(interaction)
+    # Call the original translatekaONKA command with the ctx object
+    await translatekaONKA(ctx, to_channel, from_channel, model)
+    # Optionally acknowledge the interaction with a response
+    await interaction.response.send_message(f"Slash command executed: Translating from {from_channel} to {to_channel} using model {model}...")
+
+        
+@bot.command(name='translatekaOFFKA')
+async def translatekaOFFKA(ctx, to_channel: str = None, from_channel: str = None):
+    if ctx.author.id not in AUTHORIZED_USER_IDS and not any(role.id in AUTHORIZED_ROLE_IDS for role in ctx.author.roles):
+        await ctx.send("YOU WRONGS IT YOU NOT PERMSIISONBBSDGSAFS SF asf S AS Das90ufiewnsvlkdm,c .")
+        return
+
+    # Try to fetch both from_channel and to_channel
+    from_channel = await try_fetch_channel(ctx, from_channel)
+    to_channel = await try_fetch_channel(ctx, to_channel)
+
+    # Proceed with the setup process
+    if from_channel is None and to_channel is None:
+        key = str(ctx.channel.id+ctx.channel.id)
+        print(key)
+        exist, state = toggle_existing(key, True)
+        print(exist, state)
+        if exist:
+            await ctx.send(f'IYTESBUSINESS {ctx.channel.mention}! {state}')
+            return
+
+    elif from_channel and to_channel:
+        key = str(from_channel.id+to_channel.id)
+        exist, state = toggle_existing(key, True)
+        if exist:
+            await ctx.send(f'IYTESBUSINESS {ctx.channel.mention}! {state}')
+            return
+
+    elif to_channel:
+        key = str(ctx.guild.id+to_channel.id)
+        exist, state = toggle_existing(key, True)
+        if exist:
+            await ctx.send(f'IYTESBUSINESS {ctx.channel.mention}!')
+            return
+
+
+def punch_out_random_words(text, num_words_to_remove):
+    words = text.split()  # Split the text into words
+    if num_words_to_remove > len(words):
+        raise ValueError("Number of words to remove exceeds the total number of words in the text.")
+    
+    words_to_remove = random.sample(words, num_words_to_remove)  # Randomly pick words to remove
+    punched_out_text = ' '.join(word for word in words if word not in words_to_remove)
+    
+    return punched_out_text
+
+@bot.command(name='translateka')
+async def translateka(ctx, *, text, recursion_depth = 0, punchka_outka = False):
+    model='t5-mihm'
+    if not bot.top_layer or text is None:
+        return
+    bot._blocked = True
+    logger.info(text)
+    text = punch_out_random_words(text, random.randint(0, len(text.split(" "))//2))
+    response = bot.zmqSend(text, model)
+    for i in range(recursion_depth):
+        response = bot.zmqSend(text, model)
+    
+    author = ctx.author.name
+    logger.info("OKEE", author)
+    try:
+        author_ = ctx.author.nick
+        if author_ is not None:
+            author = author_
+        else:
+            author = ctx.author.display_name
+        logger.info("jOKEE", author, ctx.author.display_name)
+    except:
+        logger.info("XDDD NOTT NICK")
+    
+    
+    logger.info(author, bot.nick_cache)
+    try:
+        if author not in bot.nick_cache:
+            author_ = bot.zmqSend(author, model)
+            if author_:
+                bot.nick_cache[author] = author_
+                author = author_
+        else:
+            author = bot.nick_cache[author]
+    except Exception as e:
+        logger.error(f"HUBINTA {e}")
+    logger.warning(f"{author}: {text} -> {response}")
+    # Forward the response via webhook
+    bot._blocked = False
+    await ctx.send(response)
+    return
+
+print("RIAF")
+bot.run(TOKENIITA_BAXSANTA)
