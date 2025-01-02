@@ -7,16 +7,80 @@ import asyncio
 import json
 import random
 import logging
+import traceback
 from config import *
 
 logging.basicConfig(
-    level=logging.WARN,
+    level=logging.INFO,
     format='[%(asctime)s][%(levelname)s][%(name)s]: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 logger = logging.getLogger(__name__)
 
-class MyBot(commands.Bot):
+class ZMQClient:
+    def __init__(self, port, layer_name, heartbeat_interval=60, timeout=60):
+        self.port = port
+        self.layer_name = layer_name
+        self.heartbeat_interval = heartbeat_interval
+        self.timeout = timeout
+        self.context = zmq.Context()
+        self.socket = self.create_zmq_socket()
+        self.is_available = True
+        self.logger = logging.getLogger(self.__class__.__name__)
+        
+    async def start(self, loop):
+        loop.create_task(self.heartbeat_task())
+
+    def create_zmq_socket(self):
+        socket = self.context.socket(zmq.REQ)
+        socket.setsockopt(zmq.RCVTIMEO, self.timeout)
+        socket.connect(f"tcp://127.0.0.1:{self.port}")
+        return socket
+
+    def safe_send(self, message):
+        try:
+            self.is_available = True
+            packed_data = msgpack.packb(message)
+            self.socket.send(packed_data)
+            response = self.socket.recv()
+            return msgpack.unpackb(response)
+        except zmq.Again as e:
+            self.is_available = False
+            self.logger.error(f"Timeout while waiting for a response: {e}")
+            return None
+        except zmq.ZMQError as e:
+            self.is_available = False
+            self.logger.error(f"ZMQ Error: {e}, attempting to reconnect...")
+            self.reconnect_socket()
+            return None
+        except Exception as e:
+            self.is_available = False
+            self.logger.error(f"Error sending message: {e}")
+            return None
+
+    def reconnect_socket(self):
+        self.logger.debug(f"Reconnecting {self.layer_name} socket")
+        self.socket.close()
+        self.socket = self.create_zmq_socket()
+
+    async def heartbeat_task(self):
+        while True:
+            await asyncio.sleep(self.heartbeat_interval)
+            try:
+                response = self.safe_send({"from": "hiran", "type": "ping"})
+                if response:
+                    self.is_available = True
+                    self.logger.debug(f"Heartbeat response from {self.layer_name}: {response}")
+                else:
+                    self.is_available = False
+                    self.logger.error(f"No response from {self.layer_name} during heartbeat")
+            except Exception as e:
+                self.is_available = False
+                self.logger.error(traceback.format_exc())
+                self.logger.error(f"Failed heartbeat for {self.layer_name}")
+                self.reconnect_socket()
+
+class Translatiob(commands.Bot):
     def __init__(self,top_layer_port):
         intents = discord.Intents.default()
         intents.typing = True
@@ -25,56 +89,42 @@ class MyBot(commands.Bot):
         intents.members = True
         super().__init__(command_prefix='!', intents=intents)  # Use '!' as command prefix
         self.temp = 2.2  # Default temperature
-        self.top_layer_port = top_layer_port
         
-        # Initialize ZeroMQ context and socket
-        self.top_layer_context = zmq.Context()
-        self.top_layer_socket = self.top_layer_context.socket(zmq.REQ)
-        self.top_layer_socket.setsockopt(zmq.RCVTIMEO, TIMEOUT)
-        self.top_layer_socket.connect(f"tcp://127.0.0.1:{top_layer_port}")
+        self.LLM = ZMQClient(port=top_layer_port, layer_name="LLM", timeout=TIMEOUT)
         self.nick_cache = {}
         self._blocked = False
-        self.top_layer = False
         self.setups = self.load_setups()  # Load existing setups from JSON
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.cache = {}
         
     async def on_ready(self):
-        logger.info(f'Logged in as {self.user}')
-        self.heartbeat_task.start()
+        self.logger.info(f'Logged in as {self.user}')
+        await self.LLM.start(self.loop)
         self.clear_names.start()
         await self.tree.sync()
 
     def can_delete(self, message, key):
         if key in self.setups and self.setups[key].get("delete_messages", False) and not self.setups[key].get("disabled", False):
             if not message.webhook_id:
-                logger.info("MNONE WEGBHOKKER")
+                self.logger.info("MNONE WEGBHOKKER")
                 return 1
             else:              
                 for k,v in self.setups.items():
                     if v['webhook_id'] == message.webhook_id:
                         return -1
                 return 1
-                if False: # cool for regurgiatates
-                    for setup_value in self.setups.values():
-                        logger.info(f"AM CHECKOCK {message.webhook_id} amd {setup_value['webhook_id']} ")
-                        if message.webhook_id != setup_value['webhook_id']:
-                            return 1  # Delete the message if configured to do so
-                        else:
-                            logger.info("YBUBBB")
-                            return -1
         return 0
     
     def get_author(self, message):
         author = message.author.name
-        logger.info("OKEE", author)
         try:
             author_ = message.author.nick
             if author_ is not None:
                 author = author_
             else:
                 author = message.author.display_name
-            logger.info("jOKEE", author, message.author.display_name)
         except:
-            logger.info("XDDD NOTT NICK")
+            self.logger.info("XDDD NOTT NICK")
         return author
         
     def get_avatar(self, message):
@@ -86,17 +136,17 @@ class MyBot(commands.Bot):
         return avatar
     
     def translate_author(self, author, model):
-        logger.info(author, self.nick_cache)
+        self.logger.debug(f"{author}, {self.nick_cache}")
         try:
             if author not in self.nick_cache:
-                author_ = self.zmqSend(author, model)
+                author_ = self.LLM.safe_send(bot.get_config(author, model))
                 if author_:
                     self.nick_cache[author] = author_
                     author = author_
             else:
                 author = self.nick_cache[author]
         except Exception as e:
-            logger.error(f"HUBINTA {e}")
+            self.logger.error(f"HUBINTA {e}")
         return author
     
     async def on_message(self, message):
@@ -121,8 +171,12 @@ class MyBot(commands.Bot):
                 is_from_self = True
         if is_from_self:
             return
-                        
-        print(relevant_keys)
+        
+            
+        #if message.channel.id in self.cache:
+        #    self.cache[message.channel.id].union(set(relevant_keys))
+        #else:
+        #    self.cache[message.channel.id] = set(relevant_keys)
         
         for key in relevant_keys:
             if key['delete_messages']:
@@ -132,27 +186,42 @@ class MyBot(commands.Bot):
                     print("NOT DELTE CONE")
             asyncio.create_task(self._on_message(message, author, avatar, key))
 
+    def get_config(self, text, model):
+        return ({
+            "type": "gen",
+            "text": text,
+            "model": model,
+            "config": {
+                "temperature": self.temp,
+                'max_new_tokens': 200,
+                'num_beams': 3,
+                'no_repeat_ngram_size': 2,
+                'repetition_penalty': 1.01,
+            },
+            "from": "translatiob"
+        })
 
     async def _on_message(self, message, author, avatar, setup):
-        if not self.top_layer or message.content is None:
+        if not self.LLM.is_available or message.content is None:
             return
         self._blocked = True
-        logger.info(message.content)
+        self.logger.info(message.content)
         if setup:
-            model = setup['model']
-            response = self.zmqSend(message.content, model)
+            print("sir ok")
+            print(self.get_config(message.content, model = setup['model']))
+            response = self.LLM.safe_send(self.get_config(message.content, model = setup['model']))
             responses = [response]
             current_woble = response
-            logger.warning(f"{author}: {message.content} -> {response}")
+            self.logger.warning(f"{author}: {message.content} -> {response}")
             if True:
                 for i in range(setup['recursion_depth']):
                     old_wobble = current_woble
-                    current_woble = self.zmqSend(old_wobble, model)
-                    logger.warning(f"{author}: {old_wobble} -> {current_woble}")
+                    current_woble = self.LLM.safe_send(self.get_config(old_wobble, model = setup['model']))
+                    self.logger.warning(f"{author}: {old_wobble} -> {current_woble}")
                     if current_woble:
                         responses.append(current_woble)
             print(responses)
-            author = self.translate_author(author, model)
+            author = self.translate_author(author, setup['model'])
             # Forward the response via webhook
             for resp in responses:
                 _, sent = await self.send_webhook(message, resp, author, setup, avatar)
@@ -181,47 +250,8 @@ class MyBot(commands.Bot):
             
             # Send the webhook and get the response
             webhook_response = requests.post(webhook_url, json=webhook_data)
-            # Return the message ID of the sent message
-            self.translation_pairs[resp] = message.content
             return webhook_response, resp
 
-    def zmqSend(self, text: str, model: str):
-        message = {
-            "type": "gen",
-            "text": text,
-            "model": model,
-            "config": {
-                "temperature": self.temp,
-                'max_new_tokens': 200,
-                'num_beams': 3,
-                'no_repeat_ngram_size': 2,
-                'repetition_penalty': 1.01,
-            },
-            "from": "translatiob"
-        }
-        logger.info(f"SENDING {message}")
-        try:
-            response = self.pack_and_send(message)
-            logger.info(response)
-            return response
-        except Exception as e:
-            logger.error(e)
-            logger.error("======ZMQSEND TIMEOUT OR SOMETHING======")
-            self.top_layer_socket.close()
-            self.top_layer_socket = self.top_layer_context.socket(zmq.REQ)
-            self.top_layer_socket.setsockopt(zmq.RCVTIMEO, TIMEOUT)
-            self.top_layer_socket.connect(f"tcp://127.0.0.1:{self.top_layer_port}")
-
-
-        
-
-    def pack_and_send(self, data):
-        packed_data = msgpack.packb(data)
-        self.top_layer_socket.send(packed_data)
-        packed_response = self.top_layer_socket.recv()
-        response = msgpack.unpackb(packed_response)
-        return response
-    
     @tasks.loop(seconds=60*5)
     async def clear_names(self):
         if self._blocked:
@@ -229,28 +259,8 @@ class MyBot(commands.Bot):
         if self.nick_cache:
             random_key = random.choice(list(self.nick_cache.keys()))
             del self.nick_cache[random_key]
-            logger.info(f"Removed '{random_key}' from nick_cache.")
-    
-    @tasks.loop(seconds=60)
-    async def heartbeat_task(self):
-        try:
-            message = {
-                "from": "translatiob",
-                "type": "ping"
-            }
-            self.top_layer_socket.setsockopt(zmq.RCVTIMEO, 100)
-            response = self.pack_and_send(message)
-            self.top_layer_socket.setsockopt(zmq.RCVTIMEO, TIMEOUT)
-            self.top_layer = True
-            logger.info(response)
-        except zmq.Again:
-            self.top_layer = False
-            logger.error("ANTI HEART BEATTTTTTTTT''s")
-            self.top_layer_socket.close()
-            self.top_layer_socket = self.top_layer_context.socket(zmq.REQ)
-            self.top_layer_socket.setsockopt(zmq.RCVTIMEO, TIMEOUT)
-            self.top_layer_socket.connect(f"tcp://127.0.0.1:{self.top_layer_port}")
-
+            self.logger.info(f"Removed '{random_key}' from nick_cache.")
+ 
     def load_setups(self):
         try:
             with open(SETUP_FILE, 'r') as f:
@@ -267,7 +277,7 @@ class MyBot(commands.Bot):
         webhook = await channel.create_webhook(name=f"{self.user.name} Webhook")
         return webhook
 
-bot = MyBot(top_layer_port=5556)
+bot = Translatiob(top_layer_port=5556)
 
 
 # Create a session for the webhook adapter
@@ -544,40 +554,39 @@ def punch_out_random_words(text, num_words_to_remove):
 @bot.command(name='translateka')
 async def translateka(ctx, *, text, recursion_depth = 0, punchka_outka = False):
     model='t5-mihm'
-    if not bot.top_layer or text is None:
+    if not bot.LLM.is_available or text is None:
         return
     bot._blocked = True
-    logger.info(text)
+    bot.logger.info(text)
     text = punch_out_random_words(text, random.randint(0, len(text.split(" "))//2))
-    response = bot.zmqSend(text, model)
+    response = bot.LLM.safe_send(bot.get_config(text, model))
     for i in range(recursion_depth):
-        response = bot.zmqSend(text, model)
+        response = bot.LLM.safe_send(bot.get_config(text, model))
     
     author = ctx.author.name
-    logger.info("OKEE", author)
+    bot.logger.info("OKEE", author)
     try:
         author_ = ctx.author.nick
         if author_ is not None:
             author = author_
         else:
             author = ctx.author.display_name
-        logger.info("jOKEE", author, ctx.author.display_name)
     except:
-        logger.info("XDDD NOTT NICK")
+        bot.logger.debug("XDDD NOTT NICK")
     
     
-    logger.info(author, bot.nick_cache)
+    bot.logger.info(author, bot.nick_cache)
     try:
         if author not in bot.nick_cache:
-            author_ = bot.zmqSend(author, model)
+            author_ = bot.LLM.safe_send(bot.get_config(author, model))
             if author_:
                 bot.nick_cache[author] = author_
                 author = author_
         else:
             author = bot.nick_cache[author]
     except Exception as e:
-        logger.error(f"HUBINTA {e}")
-    logger.warning(f"{author}: {text} -> {response}")
+        bot.logger.error(f"HUBINTA {e}")
+    bot.logger.warning(f"{author}: {text} -> {response}")
     # Forward the response via webhook
     bot._blocked = False
     await ctx.send(response)
