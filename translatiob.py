@@ -124,7 +124,7 @@ class Translatiob(commands.Bot):
             else:
                 author = message.author.display_name
         except:
-            self.logger.info("XDDD NOTT NICK")
+            self.logger.debug("XDDD NOTT NICK")
         return author
         
     def get_avatar(self, message):
@@ -205,7 +205,7 @@ class Translatiob(commands.Bot):
         if not self.LLM.is_available or message.content is None:
             return
         self._blocked = True
-        self.logger.info(message.content)
+        self.logger.debug(message.content)
         if setup:
             response = self.LLM.safe_send(self.get_config(message.content, model = setup['model']))
             responses = [response]
@@ -351,8 +351,13 @@ def format_discord_mentions(data):
         
     return activeka, disabledka
 
-@bot.command(name='showkasetupka')
-async def showkasetupka(ctx):
+@bot.tree.command(name="setupkashowka")
+async def setupkashowka_slash(interaction: discord.Interaction):
+    ctx = await bot.get_context(interaction)
+    await setupkashowka(ctx)
+
+@bot.command(name='setupkashowka')
+async def setupkashowka(ctx):
     if ctx.author.id not in AUTHORIZED_USER_IDS and not any(role.id in AUTHORIZED_ROLE_IDS for role in ctx.author.roles):
         await ctx.send("YOU WRONGS IT YOU ANTI PERMISSIONS")
         return
@@ -365,16 +370,26 @@ async def showkasetupka(ctx):
         msg += item + "\n"
     await ctx.send(msg)
 
+@bot.tree.command(name="temp")
+async def temp_slash(interaction: discord.Interaction, temp: int):
+    ctx = await bot.get_context(interaction)
+    await temp(ctx, temp)
+
 @bot.command(name='temp')
 async def temp(ctx, temp):
     if ctx.author.id not in AUTHORIZED_USER_IDS and not any(role.id in AUTHORIZED_ROLE_IDS for role in ctx.author.roles):
         await ctx.send("YOU WRONGS IT YOU ANTI PERMISSIONS")
         return
-    bot.temp = max(0.1, min(float(temp), 3))
+    bot.temp = max(0.1, min(float(temp), 5))
     await ctx.send(f'NEW HIS TEMP NEW!!!!! {bot.temp}')
 
+@bot.tree.command(name="hiyou")
+async def hiyou_slash(interaction: discord.Interaction, user: discord.Member,  model: str = 't5-mihm', recursion_depth: int = 0):
+    ctx = await bot.get_context(interaction)
+    await hiyou(ctx, user, model, recursion_depth)
+
 @bot.command(name='hiyou')
-async def hiyou(ctx, user: discord.Member, model: str = 't5-mihm'):
+async def hiyou(ctx, user: discord.Member, model: str = 't5-mihm', recursion_depth: int = 0):
     if ctx.author.id not in AUTHORIZED_USER_IDS and not any(role.id in AUTHORIZED_ROLE_IDS for role in ctx.author.roles):
         return
     
@@ -395,13 +410,16 @@ async def hiyou(ctx, user: discord.Member, model: str = 't5-mihm'):
         "webhook_token": webhook.token,
         "model": model,
         "disabled": False,
-        "recursion_depth": 0
+        "recursion_depth": min(MAX_RECURSION_DEPTH, max(0, recursion_depth))
     }
     bot.save_setups()
 
     await ctx.send(f'Ready for business? <@{user.id}>')
 
-
+@bot.tree.command(name="byeyou")
+async def byeyou_slash(interaction: discord.Interaction, user: discord.Member):
+    ctx = await bot.get_context(interaction)
+    await byeyou(ctx, user)
 
 @bot.command(name='byeyou')
 async def byeyou(ctx, user: discord.Member):
@@ -414,9 +432,13 @@ async def byeyou(ctx, user: discord.Member):
         await ctx.send(f'IYTESBUSINESS {ctx.channel.mention}! {state}')
     await ctx.send(f'ANTI BUSINESSSSSSSSSSSSSSSSSSSsssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss <@{user.id}> Business close status ') 
 
+@bot.tree.command(name="translatekaonka")
+async def translatekaONKA_slash(interaction: discord.Interaction, to_channel: str = None, from_channel: str = None, model: str = 't5-mihm', recursion_depth: int = 0):
+    ctx = await bot.get_context(interaction)
+    await translatekaONKA(ctx, to_channel, from_channel, model, recursion_depth)
 
 @bot.command(name='translatekaONKA')
-async def translatekaONKA(ctx, to_channel: str = None, from_channel: str = None, model: str = 't5-mihm'):
+async def translatekaONKA(ctx, to_channel: str = None, from_channel: str = None, model: str = 't5-mihm', recursion_depth: int = 0):
     if ctx.author.id not in AUTHORIZED_USER_IDS and not any(role.id in AUTHORIZED_ROLE_IDS for role in ctx.author.roles):
         await ctx.send("YOU WRONGS YOUR WORONGS. YOU NOT")
         return
@@ -444,7 +466,7 @@ async def translatekaONKA(ctx, to_channel: str = None, from_channel: str = None,
             "webhook_token": webhook.token,
             "model": model,
             "disabled": False,
-            "recursion_depth": 0
+            "recursion_depth": min(MAX_RECURSION_DEPTH, max(0, recursion_depth))
         }
         bot.save_setups()
         await ctx.send(f'IYTESBUSINESS {ctx.channel.mention}!')
@@ -466,7 +488,7 @@ async def translatekaONKA(ctx, to_channel: str = None, from_channel: str = None,
             "webhook_token": webhook.token,
             "model": model,
             "disabled": False,
-            "recursion_depth": 0
+            "recursion_depth": min(MAX_RECURSION_DEPTH, max(0, recursion_depth))
         }
         bot.save_setups()  # Save setups after modification
         await ctx.send(f'OIYESBUSINESS {from_channel.mention} -> {to_channel.mention} Webhooker.')
@@ -488,22 +510,16 @@ async def translatekaONKA(ctx, to_channel: str = None, from_channel: str = None,
             "webhook_token": webhook.token,
             "model": model,
             "disabled": False,
-            "recursion_depth": 0
+            "recursion_depth": min(MAX_RECURSION_DEPTH, max(0, recursion_depth))
         }
         bot.save_setups()  # Save setups after modification
         await ctx.send(f'oyes uinesss Server -> {to_channel.mention} WEbholker .')
 
-@bot.tree.command(name="translatekaonka")
-async def translatekaONKA_slash(interaction: discord.Interaction, to_channel: str = None, from_channel: str = None, model: str = 't5-mihm'):
-    # Convert the interaction into a mock context object (if needed) to call the original function
-    # Simulate a context using interaction for the original function call
+@bot.tree.command(name="translatekaoffka")
+async def translatekaOFFKA_slash(interaction: discord.Interaction, to_channel: str = None, from_channel: str = None):
     ctx = await bot.get_context(interaction)
-    # Call the original translatekaONKA command with the ctx object
-    await translatekaONKA(ctx, to_channel, from_channel, model)
-    # Optionally acknowledge the interaction with a response
-    await interaction.response.send_message(f"Slash command executed: Translating from {from_channel} to {to_channel} using model {model}...")
+    await translatekaOFFKA(ctx, to_channel, from_channel)
 
-        
 @bot.command(name='translatekaOFFKA')
 async def translatekaOFFKA(ctx, to_channel: str = None, from_channel: str = None):
     if ctx.author.id not in AUTHORIZED_USER_IDS and not any(role.id in AUTHORIZED_ROLE_IDS for role in ctx.author.roles):
@@ -549,9 +565,14 @@ def punch_out_random_words(text, num_words_to_remove):
     
     return punched_out_text
 
+
+@bot.tree.command(name="translateka")
+async def translateka_slash(interaction: discord.Interaction, text: str, recursion_depth: int = 0, model: str = 't5-mihm'):
+    ctx = await bot.get_context(interaction)
+    await translateka(ctx, text=text, recursion_depth=recursion_depth, model=model)
+    
 @bot.command(name='translateka')
-async def translateka(ctx, *, text, recursion_depth = 0, punchka_outka = False):
-    model='t5-mihm'
+async def translateka(ctx, *, text, recursion_depth = 0, punchka_outka = False, model: str = 't5-mihm'):
     if not bot.LLM.is_available or text is None:
         return
     bot._blocked = True
@@ -560,18 +581,8 @@ async def translateka(ctx, *, text, recursion_depth = 0, punchka_outka = False):
     response = bot.LLM.safe_send(bot.get_config(text, model))
     for i in range(recursion_depth):
         response = bot.LLM.safe_send(bot.get_config(text, model))
-    
-    author = ctx.author.name
-    bot.logger.info("OKEE", author)
-    try:
-        author_ = ctx.author.nick
-        if author_ is not None:
-            author = author_
-        else:
-            author = ctx.author.display_name
-    except:
-        bot.logger.debug("XDDD NOTT NICK")
-    
+
+    author = bot.get_author(ctx)
     
     bot.logger.info(author, bot.nick_cache)
     try:
@@ -590,5 +601,4 @@ async def translateka(ctx, *, text, recursion_depth = 0, punchka_outka = False):
     await ctx.send(response)
     return
 
-print("RIAF")
 bot.run(TOKENIITA_BAXSANTA)
