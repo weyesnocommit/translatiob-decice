@@ -239,7 +239,7 @@ class Translatiob(commands.Bot):
                 idka = message.id
                 resp = f"[{response}](https://discord.com/channels/{kanal}/{kanal}/{idka})"
             if excesska:
-                resp = f"{excesska}: {resp}"
+                resp = f"{excesska}:\n{resp}"
             webhook_data = {
                 "content": resp,  # Assuming the response has a "text" field
                 "username": author[:80],
@@ -568,8 +568,10 @@ def punch_out_random_words(text, num_words_to_remove):
 
 @bot.tree.command(name="translateka")
 async def translateka_slash(interaction: discord.Interaction, text: str, recursion_depth: int = 0, model: str = 't5-mihm'):
+    await interaction.response.defer()
     ctx = await bot.get_context(interaction)
     await translateka(ctx, text=text, recursion_depth=recursion_depth, model=model)
+
     
 @bot.command(name='translateka')
 async def translateka(ctx, *, text, recursion_depth = 0, punchka_outka = False, model: str = 't5-mihm'):
@@ -583,8 +585,7 @@ async def translateka(ctx, *, text, recursion_depth = 0, punchka_outka = False, 
         response = bot.LLM.safe_send(bot.get_config(text, model))
 
     author = bot.get_author(ctx)
-    
-    bot.logger.info(author, bot.nick_cache)
+    bot.logger.debug(f"{author}, {bot.nick_cache}")
     try:
         if author not in bot.nick_cache:
             author_ = bot.LLM.safe_send(bot.get_config(author, model))
