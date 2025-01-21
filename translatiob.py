@@ -193,10 +193,11 @@ class Translatiob(commands.Bot):
             "model": model,
             "config": {
                 "temperature": self.temp,
-                'max_new_tokens': 200,
-                'num_beams': 3,
+                'max_new_tokens': 256,
+                'num_beams': 1,
                 'no_repeat_ngram_size': 2,
                 'repetition_penalty': 1.01,
+                'skip_special_tokens_out': True
             },
             "from": "translatiob"
         })
@@ -237,7 +238,7 @@ class Translatiob(commands.Bot):
             if not setup['delete_messages']:
                 kanal = message.channel.id
                 idka = message.id
-                resp = f"[{response}](https://discord.com/channels/{kanal}/{kanal}/{idka})"
+                resp = f"{response}\n||https://discord.com/channels/{kanal}/{kanal}/{idka}||"
             if excesska:
                 resp = f"{excesska}:\n{resp}"
             webhook_data = {
@@ -345,9 +346,9 @@ def format_discord_mentions(data):
             dest = "Unknown"
         
         if not v['disabled']:
-            activeka.append(f"{k}(model={v['model']}, depth={v['recursion_depth']}): {source} -> {dest}")
+            activeka.append(f"{str(k)[:5]}(m={v['model']}, d={v['recursion_depth']}): {source} -> {dest}")
         else:
-            disabledka.append(f"{k}(model={v['model']}, depth={v['recursion_depth']}): {source} -> {dest}")
+            disabledka.append(f"{str(k)[:5]}(m={v['model']}, d={v['recursion_depth']}): {source} -> {dest}")
         
     return activeka, disabledka
 
