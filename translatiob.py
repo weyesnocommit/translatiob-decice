@@ -207,7 +207,7 @@ class Translatiob(commands.Bot):
             "text": text,
             "model": model,
             "config": self.llmcfg,
-            "xdddd":{
+            "XDEAR":{
                 "temperature": self.temp,
                 'max_new_tokens': 256,
                 'num_beams': 1,
@@ -400,7 +400,7 @@ async def cfg(ctx, keyska, val: float):
         return
     if keyska in bot.llmcfg:
         if keyska in ["temperature", "top_p"]:
-            bot.llmcfg[keyska] = max(min(0.1, float(val)), 5) if val > 0 else None
+            bot.llmcfg[keyska] = max(min(0.1, float(val)), 5.0) if val >= 0 else None
         elif keyska in ["skip_special_tokens_out"]:
             bot.llmcfg[keyska] = bool(val)
         else:
@@ -424,9 +424,9 @@ async def hiyou(ctx, user: discord.Member, model: str = 't5-mihm', recursion_dep
     
     key = str(user.id+ctx.channel.id)
     exist, state = toggle_existing(key, False)
-    if exist:
-        await ctx.send(f'IYTESBUSINESS {ctx.channel.mention}! {state}')
-        return
+    #if exist:
+    #    await ctx.send(f'IYTESBUSINESS {ctx.channel.mention}! {state}')
+    #    return
     webhook = await manage_webhooker(ctx.channel)
     bot.setups[key] = {
         "created_in": ctx.channel.id,
