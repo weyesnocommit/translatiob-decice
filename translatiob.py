@@ -239,8 +239,8 @@ class Translatiob(commands.Bot):
                 kanal = message.channel.id
                 idka = message.id
                 resp = f"{response}\n||https://discord.com/channels/{kanal}/{kanal}/{idka}||"
-            if excesska:
-                resp = f"{excesska}:\n{resp}"
+            #if excesska:
+                #resp = f"{excesska}:\n{resp}"
             webhook_data = {
                 "content": resp,  # Assuming the response has a "text" field
                 "username": author[:80],
@@ -392,6 +392,7 @@ async def hiyou_slash(interaction: discord.Interaction, user: discord.Member,  m
 @bot.command(name='hiyou')
 async def hiyou(ctx, user: discord.Member, model: str = 't5-mihm', recursion_depth: int = 0):
     if ctx.author.id not in AUTHORIZED_USER_IDS and not any(role.id in AUTHORIZED_ROLE_IDS for role in ctx.author.roles):
+        await ctx.send("YOU WRONGS IT YOU ANTI PERMISSIONS")
         return
     
     key = str(user.id+ctx.channel.id)
@@ -425,6 +426,7 @@ async def byeyou_slash(interaction: discord.Interaction, user: discord.Member):
 @bot.command(name='byeyou')
 async def byeyou(ctx, user: discord.Member):
     if ctx.author.id not in AUTHORIZED_USER_IDS and not any(role.id in AUTHORIZED_ROLE_IDS for role in ctx.author.roles):
+        await ctx.send("YOU WRONGS IT YOU ANTI PERMISSIONS")
         return
     
     key = str(user.id+ctx.channel.id)
