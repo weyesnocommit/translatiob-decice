@@ -400,7 +400,7 @@ async def cfg(ctx, keyska, val: float):
         return
     if keyska in bot.llmcfg:
         if keyska in ["temperature", "top_p"]:
-            bot.llmcfg[keyska] = max(min(0.1, float(val)), 5.0) if val >= 0 else None
+            bot.llmcfg[keyska] = min(max(0.1, float(val)), 5.0) if val >= 0 else None
         elif keyska in ["skip_special_tokens_out"]:
             bot.llmcfg[keyska] = bool(val)
         else:
