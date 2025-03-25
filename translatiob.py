@@ -1,4 +1,5 @@
 import discord
+from discord import app_commands
 from discord.ext import commands, tasks
 import zmq
 import msgpack
@@ -89,6 +90,13 @@ class Translatiob(commands.Bot):
         intents.members = True
         super().__init__(command_prefix='!', intents=intents)  # Use '!' as command prefix
         self.temp = 2.2  # Default temperature
+        self.models = []
+        self.models_decice = []
+        self.llmcfg = {
+            "top_p": None,
+            "temperature": 1.1,
+            "skip_special_tokens_out": True
+        }
         
         self.LLM = ZMQClient(port=top_layer_port, layer_name="LLM", timeout=TIMEOUT)
         self.nick_cache = {}
@@ -100,8 +108,12 @@ class Translatiob(commands.Bot):
     async def on_ready(self):
         self.logger.info(f'Logged in as {self.user}')
         await self.LLM.start(self.loop)
+        self.models = self.LLM.safe_send({"from": "translatiob", "type": "get_models"})
+        for i in self.models:
+            self.models_decice.append(app_commands.Choice(name=i, value=i))
         self.clear_names.start()
         await self.tree.sync()
+        
 
     def can_delete(self, message, key):
         if key in self.setups and self.setups[key].get("delete_messages", False) and not self.setups[key].get("disabled", False):
@@ -191,7 +203,8 @@ class Translatiob(commands.Bot):
             "type": "gen",
             "text": text,
             "model": model,
-            "config": {
+            "config": self.llmcfg,
+            "xdddd":{
                 "temperature": self.temp,
                 'max_new_tokens': 256,
                 'num_beams': 1,
@@ -277,6 +290,7 @@ class Translatiob(commands.Bot):
         return webhook
 
 bot = Translatiob(top_layer_port=5556)
+
 
 
 # Create a session for the webhook adapter
@@ -371,20 +385,28 @@ async def setupkashowka(ctx):
         msg += item + "\n"
     await ctx.send(msg)
 
-@bot.tree.command(name="temp")
-async def temp_slash(interaction: discord.Interaction, temp: int):
+@bot.tree.command(name="cfg")
+async def cfg_slash(interaction: discord.Interaction, keyska: str, val: float):
     ctx = await bot.get_context(interaction)
-    await temp(ctx, temp)
+    await cfg(ctx, keyska, val)
 
-@bot.command(name='temp')
-async def temp(ctx, temp):
+@bot.command(name='cfg')
+async def cfg(ctx, keyska, val: float):
     if ctx.author.id not in AUTHORIZED_USER_IDS and not any(role.id in AUTHORIZED_ROLE_IDS for role in ctx.author.roles):
         await ctx.send("YOU WRONGS IT YOU ANTI PERMISSIONS")
         return
-    bot.temp = max(0.1, min(float(temp), 5))
-    await ctx.send(f'NEW HIS TEMP NEW!!!!! {bot.temp}')
+    if keyska in bot.llmcfg:
+        if keyska in ["temperature", "top_p"]:
+            bot.llmcfg[keyska] = max(min(0.1, float(val)), 5)
+        else:
+            bot.llmcfg[keyska] = int(val)
+        await ctx.send(f'NEW HIS {keyska} NEW!!!!! {bot.llmcfg[keyska]}')
+    else:
+        await ctx.send(f"ahahah mr     anushka you wrongs it agains")
+        
 
 @bot.tree.command(name="hiyou")
+@app_commands.choices(model=bot.models_decice)
 async def hiyou_slash(interaction: discord.Interaction, user: discord.Member,  model: str = 't5-mihm', recursion_depth: int = 0):
     ctx = await bot.get_context(interaction)
     await hiyou(ctx, user, model, recursion_depth)
@@ -436,6 +458,7 @@ async def byeyou(ctx, user: discord.Member):
     await ctx.send(f'ANTI BUSINESSSSSSSSSSSSSSSSSSSsssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss <@{user.id}> Business close status ') 
 
 @bot.tree.command(name="translatekaonka")
+@app_commands.choices(model=bot.models_decice)
 async def translatekaONKA_slash(interaction: discord.Interaction, to_channel: str = None, from_channel: str = None, model: str = 't5-mihm', recursion_depth: int = 0):
     ctx = await bot.get_context(interaction)
     await translatekaONKA(ctx, to_channel, from_channel, model, recursion_depth)
@@ -570,6 +593,7 @@ def punch_out_random_words(text, num_words_to_remove):
 
 
 @bot.tree.command(name="translateka")
+@app_commands.choices(model=bot.models_decice)
 async def translateka_slash(interaction: discord.Interaction, text: str, recursion_depth: int = 0, model: str = 't5-mihm'):
     await interaction.response.defer()
     ctx = await bot.get_context(interaction)
