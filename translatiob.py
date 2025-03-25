@@ -94,6 +94,9 @@ class Translatiob(commands.Bot):
         self.models_decice = []
         self.llmcfg = {
             "top_p": None,
+            "top_k": None,
+            "num_beams": None,
+            "repetition_penalty": None,
             "temperature": 1.1,
             "skip_special_tokens_out": True
         }
@@ -397,9 +400,11 @@ async def cfg(ctx, keyska, val: float):
         return
     if keyska in bot.llmcfg:
         if keyska in ["temperature", "top_p"]:
-            bot.llmcfg[keyska] = max(min(0.1, float(val)), 5)
+            bot.llmcfg[keyska] = max(min(0.1, float(val)), 5) if val > 0 else None
+        elif keyska in ["skip_special_tokens_out"]:
+            bot.llmcfg[keyska] = bool(val)
         else:
-            bot.llmcfg[keyska] = int(val)
+            bot.llmcfg[keyska] = int(val) if val > 0 else None
         await ctx.send(f'NEW HIS {keyska} NEW!!!!! {bot.llmcfg[keyska]}')
     else:
         await ctx.send(f"ahahah mr     anushka you wrongs it agains")
