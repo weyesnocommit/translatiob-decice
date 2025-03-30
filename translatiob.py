@@ -546,6 +546,76 @@ async def translatekaONKA(ctx, to_channel: str = None, from_channel: str = None,
         bot.save_setups()  # Save setups after modification
         await ctx.send(f'oyes uinesss Server -> {to_channel.mention} WEbholker .')
 
+@bot.command(name='translatekaONKA_all')
+async def translatekaONKA_all(ctx, model: str = 't5-mihm', recursion_depth: int = 0):
+    # Check authorization
+    if ctx.author.id not in AUTHORIZED_USER_IDS and not any(role.id in AUTHORIZED_ROLE_IDS for role in ctx.author.roles):
+        await ctx.send("YOU WRONGS YOUR WORONGS. YOU NOT")
+        return
+    
+    channels = [channel for channel in ctx.guild.text_channels if isinstance(channel, discord.TextChannel)]
+    
+    if not channels:
+        await ctx.send("NO CHANNELS FOUND IN THIS SERVER.")
+        return
+    
+    setup_channels = []
+    failed_channels = []
+    
+    message = await ctx.send(f"MMMMMMMMMMMMMMMMM {len(channels)} CHANNELS...")
+    for channel in channels:
+        try:
+            key = str(channel.id + channel.id)
+            if key in bot.setups:
+                continue
+            
+            webhook = await manage_webhooker(channel)
+            bot.setups[key] = {
+                "created_in": ctx.channel.id,
+                "from_author": None,
+                "from_server": None,
+                "from_channel": channel.id,
+                "to_channel": channel.id,
+                "delete_messages": True,
+                "webhook_id": webhook.id,
+                "webhook_token": webhook.token,
+                "model": model,
+                "disabled": False,
+                "recursion_depth": min(MAX_RECURSION_DEPTH, max(0, recursion_depth))
+            }
+            setup_channels.append(channel.mention)
+            await message.edit(content=f"iyes: {len(setup_channels)}/{len(channels)}...")
+            
+        except Exception as e:
+            print(f"SHIT BROO EXCEPTION <#{channel.id}>")
+            failed_channels.append(channel.mention)
+    
+    bot.save_setups()
+    result_message = []
+    
+    if setup_channels:
+        result_message.append(f"Oky {len(setup_channels)}:")
+        result_message.extend(setup_channels)
+    if failed_channels:
+        result_message.append(f"\nNoky {len(failed_channels)}:")
+        result_message.extend(failed_channels)
+        
+    chunks = []
+    current_chunk = ""
+    for line in result_message:
+        if len(current_chunk) + len(line) + 1 > 2000:
+            chunks.append(current_chunk)
+            current_chunk = line
+        else:
+            current_chunk += "\n" + line if current_chunk else line
+    
+    if current_chunk:
+        chunks.append(current_chunk)
+    
+    for chunk in chunks:
+        await ctx.send(chunk)
+
+
 @bot.tree.command(name="translatekaoffka")
 async def translatekaOFFKA_slash(interaction: discord.Interaction, to_channel: str = None, from_channel: str = None):
     ctx = await bot.get_context(interaction)
