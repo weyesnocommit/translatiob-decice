@@ -372,6 +372,7 @@ def format_discord_mentions(data):
 
 @bot.tree.command(name="setupkashowka")
 async def setupkashowka_slash(interaction: discord.Interaction):
+    await interaction.response.defer()
     ctx = await bot.get_context(interaction)
     await setupkashowka(ctx)
 
@@ -391,6 +392,7 @@ async def setupkashowka(ctx):
 
 @bot.tree.command(name="cfg")
 async def cfg_slash(interaction: discord.Interaction, keyska: str, val: float):
+    await interaction.response.defer()
     ctx = await bot.get_context(interaction)
     await cfg(ctx, keyska, val)
 
@@ -414,6 +416,7 @@ async def cfg(ctx, keyska, val: float):
 @bot.tree.command(name="hiyou")
 @app_commands.choices(model=bot.models_decice)
 async def hiyou_slash(interaction: discord.Interaction, user: discord.Member,  model: str = 't5-mihm', recursion_depth: int = 0):
+    await interaction.response.defer()
     ctx = await bot.get_context(interaction)
     await hiyou(ctx, user, model, recursion_depth)
 
@@ -448,6 +451,7 @@ async def hiyou(ctx, user: discord.Member, model: str = 't5-mihm', recursion_dep
 
 @bot.tree.command(name="byeyou")
 async def byeyou_slash(interaction: discord.Interaction, user: discord.Member):
+    await interaction.response.defer()
     ctx = await bot.get_context(interaction)
     await byeyou(ctx, user)
 
@@ -466,6 +470,7 @@ async def byeyou(ctx, user: discord.Member):
 @bot.tree.command(name="translatekaonka")
 @app_commands.choices(model=bot.models_decice)
 async def translatekaONKA_slash(interaction: discord.Interaction, to_channel: str = None, from_channel: str = None, model: str = 't5-mihm', recursion_depth: int = 0):
+    await interaction.response.defer()
     ctx = await bot.get_context(interaction)
     await translatekaONKA(ctx, to_channel, from_channel, model, recursion_depth)
 
@@ -619,6 +624,7 @@ async def translatekaONKA_all(ctx, model: str = 't5-mihm', recursion_depth: int 
 
 @bot.tree.command(name="translatekaoffka")
 async def translatekaOFFKA_slash(interaction: discord.Interaction, to_channel: str = None, from_channel: str = None):
+    await interaction.response.defer()
     ctx = await bot.get_context(interaction)
     await translatekaOFFKA(ctx, to_channel, from_channel)
 
