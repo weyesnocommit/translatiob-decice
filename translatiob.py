@@ -98,6 +98,7 @@ class Translatiob(commands.Bot):
             "num_beams": None,
             "repetition_penalty": None,
             "temperature": 1.1,
+            "min_p": 0.05,
             "skip_special_tokens_out": True
         }
         
