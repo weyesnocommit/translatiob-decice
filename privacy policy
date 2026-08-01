@@ -1,0 +1,17 @@
+# Privacy Policy for specially translatiob decice
+
+Last updated: August 2026
+
+## 1. Overview
+specially translatiob decice ("the Bot") is an interactive entertainment application for Discord. We care about user privacy and follow a strict data minimization policy.
+
+## 2. Data Collection and Storage
+* **No Persistent Data Storage:** We do not collect, store, or log any personal data, user messages, or Discord metadata in external databases or persistent storage.
+* **Transient Processing:** Message content and user inputs are processed strictly in-memory and in real-time solely to execute bot commands and generate responses via API models. Once the response is sent to Discord, the data is immediately discarded.
+* **Third-Party Services:** Text prompts sent to external AI/translation APIs are used purely for dynamic text generation and are not stored or retained by us.
+
+## 3. Opt-Out
+Since no user data or message content is stored, tracked, or logged by the Bot, there is no user tracking to opt out of.
+
+## 4. Contact
+If you have any questions regarding this privacy policy, please contact the developer via Discord.
